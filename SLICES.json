@@ -1,0 +1,37 @@
+[
+  {
+    "id": "slice-000",
+    "name": "Bootstrap project structure",
+    "status": "todo"
+  },
+  {
+    "id": "slice-001",
+    "name": "Schema + sample data inputs",
+    "status": "todo"
+  },
+  {
+    "id": "slice-002",
+    "name": "Query parsing and heuristics engine",
+    "status": "todo"
+  },
+  {
+    "id": "slice-003",
+    "name": "Coach UX with explanation + rewrite suggestions",
+    "status": "todo"
+  },
+  {
+    "id": "slice-004",
+    "name": "AI commentary layer and tone modes",
+    "status": "todo"
+  },
+  {
+    "id": "slice-005",
+    "name": "Performance visualization + examples",
+    "status": "todo"
+  },
+  {
+    "id": "slice-006",
+    "name": "Packaging, docs, and demo assets",
+    "status": "todo"
+  }
+]
