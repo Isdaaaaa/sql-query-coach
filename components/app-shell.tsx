@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import { analyzeSqlCoaching, type SqlAnalysisResult } from "@/lib/analysis";
 import { FindingsPlaceholder } from "@/components/findings-placeholder";
 import { QuerySchemaInputs } from "@/components/query-schema-inputs";
 import { SampleScenarioPicker } from "@/components/sample-scenario-picker";
 import { ScenarioMetadataCard } from "@/components/scenario-metadata-card";
-import type { SampleScenario } from "@/lib/models/domain";
+import type { SampleScenario, ToneMode } from "@/lib/models/domain";
 
 interface AppShellProps {
   scenarios: SampleScenario[];
@@ -18,6 +19,8 @@ function isDirtyComparedToSample(scenario: SampleScenario, querySql: string, sch
 
 export function AppShell({ scenarios }: AppShellProps) {
   const [selectedScenarioId, setSelectedScenarioId] = useState(scenarios[0]?.id ?? "");
+  const [mode, setMode] = useState<ToneMode>("coaching");
+
   const selectedScenario = useMemo(
     () => scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarios[0],
     [scenarios, selectedScenarioId],
@@ -25,6 +28,30 @@ export function AppShell({ scenarios }: AppShellProps) {
 
   const [querySql, setQuerySql] = useState(selectedScenario?.query.sql ?? "");
   const [schemaDdl, setSchemaDdl] = useState(selectedScenario?.schema.ddl ?? "");
+  const [analysis, setAnalysis] = useState<SqlAnalysisResult | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+
+  useEffect(() => {
+    const sql = querySql.trim();
+    if (!sql) {
+      setAnalysis(null);
+      setIsAnalyzing(false);
+      return;
+    }
+
+    setIsAnalyzing(true);
+    const timer = window.setTimeout(() => {
+      const result = analyzeSqlCoaching({
+        sql: querySql,
+        schemaDdl,
+        dialect: selectedScenario?.query.dialect,
+      });
+      setAnalysis(result);
+      setIsAnalyzing(false);
+    }, 220);
+
+    return () => window.clearTimeout(timer);
+  }, [querySql, schemaDdl, selectedScenario?.query.dialect]);
 
   if (!selectedScenario) {
     return (
@@ -56,22 +83,53 @@ export function AppShell({ scenarios }: AppShellProps) {
   };
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col p-6 md:p-8">
-      <header className="sticky top-0 z-10 mb-6 rounded-xl border border-slate-700/60 bg-base-800/80 px-4 py-3 backdrop-blur">
+    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col p-4 sm:p-6 md:p-8">
+      <header className="sticky top-0 z-20 mb-5 rounded-xl border border-slate-700/60 bg-base-800/85 px-4 py-3 shadow-panel backdrop-blur md:px-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-teal-300">SQL Query Coach</p>
-            <h1 className="text-lg font-semibold text-white">Schema + sample data inputs</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-teal-300">SQL Query Coach</p>
+            <h1 className="text-lg font-semibold text-white">Heuristic performance review workspace</h1>
           </div>
-          <div className="flex items-center gap-2 text-xs font-medium text-slate-200">
-            <span className="rounded-md border border-slate-600 px-2 py-1">Mode: Coaching</span>
-            <span className="rounded-md border border-slate-600 px-2 py-1">AI: Off</span>
-            <span className="rounded-md border border-slate-600 px-2 py-1">Data: Sample</span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center rounded-lg border border-slate-600/80 bg-slate-950/60 p-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setMode("coaching")}
+                aria-pressed={mode === "coaching"}
+                className={`rounded-md px-2.5 py-1.5 font-semibold transition ${
+                  mode === "coaching"
+                    ? "bg-teal-500/20 text-teal-100"
+                    : "text-slate-300 hover:text-slate-100"
+                }`}
+              >
+                Coaching
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("reviewer")}
+                aria-pressed={mode === "reviewer"}
+                className={`rounded-md px-2.5 py-1.5 font-semibold transition ${
+                  mode === "reviewer"
+                    ? "bg-teal-500/20 text-teal-100"
+                    : "text-slate-300 hover:text-slate-100"
+                }`}
+              >
+                Reviewer
+              </button>
+            </div>
+
+            <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1 text-xs font-medium text-slate-200">
+              AI: Off
+            </span>
+            <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1 text-xs font-medium text-slate-200">
+              Data: {isDirty ? "Custom" : "Sample"}
+            </span>
           </div>
         </div>
       </header>
 
-      <section className="grid flex-1 gap-6 lg:grid-cols-2">
+      <section className="grid flex-1 gap-5 lg:grid-cols-2">
         <article className="panel p-4 md:p-5">
           <div className="space-y-4">
             <SampleScenarioPicker
@@ -91,7 +149,13 @@ export function AppShell({ scenarios }: AppShellProps) {
           </div>
         </article>
 
-        <FindingsPlaceholder findings={selectedScenario.findings} />
+        <FindingsPlaceholder
+          mode={mode}
+          isAnalyzing={isAnalyzing}
+          analysis={analysis}
+          hasQuery={Boolean(querySql.trim())}
+          usingCustomInput={isDirty}
+        />
       </section>
     </main>
   );

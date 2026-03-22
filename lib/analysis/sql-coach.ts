@@ -120,7 +120,7 @@ export function analyzeSqlCoaching(input: AnalyzeSqlInput): SqlAnalysisResult {
   const findings: Finding[] = [];
   const appliedRules = new Set<string>();
 
-  pushSelectStarFinding(parsedQuery, findings, appliedRules);
+  pushSelectStarFinding(parsedQuery, parsedSchema, findings, appliedRules);
   pushPredicateFunctionFindings(parsedQuery, parsedSchema, findings, appliedRules);
   pushCorrelatedSubqueryFinding(parsedQuery, findings, appliedRules);
   pushDistinctAggregationFinding(parsedQuery, findings, appliedRules);
@@ -252,7 +252,12 @@ export function parseSchemaDdl(ddl: string, parseWarnings: string[] = []): Parse
   };
 }
 
-function pushSelectStarFinding(parsed: ParsedSqlQuery, findings: Finding[], appliedRules: Set<string>) {
+function pushSelectStarFinding(
+  parsed: ParsedSqlQuery,
+  schema: ParsedSchema | undefined,
+  findings: Finding[],
+  appliedRules: Set<string>,
+) {
   if (!parsed.hasSelectStar) {
     return;
   }
@@ -266,6 +271,7 @@ function pushSelectStarFinding(parsed: ParsedSqlQuery, findings: Finding[], appl
       suggestion: {
         summary: "Project only the columns needed by the consumer.",
         rationale: "A narrower projection reduces I/O and makes query intent clearer during review.",
+        rewrittenSql: buildSelectProjectionSnippet(parsed, schema),
       },
     }),
   );
@@ -299,6 +305,8 @@ function pushPredicateFunctionFindings(
             severity === "high"
               ? `Detected indexed column(s): ${indexedColumns.join(", ")}. Preserve raw column comparisons to keep those indexes usable.`
               : "Raw column comparisons generally provide more stable access paths than function-wrapped predicates.",
+          rewrittenSql: buildPredicateRewriteSnippet(fn),
+          indexStatement: severity === "medium" ? buildIndexSuggestionForColumns(fn.referencedColumns, parsed.tableRefs) : undefined,
         },
       }),
     );
@@ -319,6 +327,7 @@ function pushCorrelatedSubqueryFinding(parsed: ParsedSqlQuery, findings: Finding
       suggestion: {
         summary: "Refactor to window functions or pre-aggregated CTEs before joining.",
         rationale: "Set-based rewrites usually reduce repeated scans and produce more stable execution time.",
+        rewrittenSql: buildCorrelatedSubqueryRewriteSnippet(parsed),
       },
     }),
   );
@@ -339,6 +348,7 @@ function pushDistinctAggregationFinding(parsed: ParsedSqlQuery, findings: Findin
       suggestion: {
         summary: "Consider two-stage aggregation (dedupe first, then aggregate).",
         rationale: "Pre-aggregating unique keys can lower memory pressure and improve plan stability.",
+        rewrittenSql: buildDistinctAggregationRewriteSnippet(parsed),
       },
     }),
   );
@@ -377,6 +387,7 @@ function pushLeadingWildcardFinding(parsed: ParsedSqlQuery, findings: Finding[],
       suggestion: {
         summary: "Use trigram/full-text indexes or avoid leading wildcard patterns when possible.",
         rationale: "Specialized indexes are better suited for contains-style text search.",
+        indexStatement: buildTrigramIndexSuggestion(parsed.tableRefs),
       },
     }),
   );
@@ -389,7 +400,7 @@ function buildFinding(
     title: string;
     description: string;
     severity: Severity;
-    suggestion: Pick<RewriteSuggestion, "summary" | "rationale">;
+    suggestion: Pick<RewriteSuggestion, "summary" | "rationale" | "rewrittenSql" | "indexStatement">;
   },
 ): Finding {
   return {
@@ -402,8 +413,95 @@ function buildFinding(
       id: `suggestion-${ruleId.replace(/[^a-z0-9]+/gi, "-")}-${position + 1}`,
       summary: payload.suggestion.summary,
       rationale: payload.suggestion.rationale,
+      rewrittenSql: payload.suggestion.rewrittenSql,
+      indexStatement: payload.suggestion.indexStatement,
     },
   };
+}
+
+function buildSelectProjectionSnippet(parsed: ParsedSqlQuery, schema?: ParsedSchema): string {
+  const previewColumns: string[] = [];
+
+  for (const ref of parsed.tableRefs) {
+    const tableColumns = schema?.tableColumns[ref.tableName] ?? [];
+    const qualifier = ref.alias ?? ref.tableName;
+
+    for (const column of tableColumns.slice(0, 3)) {
+      previewColumns.push(`${qualifier}.${column}`);
+    }
+
+    if (previewColumns.length >= 8) {
+      break;
+    }
+  }
+
+  const selectedColumns = previewColumns.length > 0 ? previewColumns : ["<explicit_column_list>"];
+  return `SELECT\n  ${selectedColumns.join(",\n  ")}\n-- keep existing FROM / JOIN / WHERE clauses`;
+}
+
+function buildPredicateRewriteSnippet(predicateFn: ParsedPredicateFunction): string {
+  const targetColumn = predicateFn.referencedColumns[0] ?? "<column_name>";
+  const fn = predicateFn.functionName.toUpperCase();
+
+  if (fn === "DATE" || fn === "DATE_TRUNC") {
+    return `WHERE ${targetColumn} >= TIMESTAMPTZ '<range_start>'\n  AND ${targetColumn} < TIMESTAMPTZ '<range_end>'`;
+  }
+
+  if (fn === "LOWER" || fn === "UPPER") {
+    return `-- Prefer normalized column comparisons for index-friendly lookup\nWHERE ${targetColumn} = <normalized_value>`;
+  }
+
+  return `-- Avoid wrapping indexed columns in ${fn}() predicates when possible\nWHERE ${targetColumn} <operator> <value>`;
+}
+
+function buildIndexSuggestionForColumns(referencedColumns: string[], tableRefs: ParsedTableRef[]): string | undefined {
+  const fullRef = referencedColumns.find((column) => column.includes("."));
+  const fallbackRef = referencedColumns[0];
+  const targetRef = fullRef ?? fallbackRef;
+
+  if (!targetRef) {
+    return undefined;
+  }
+
+  const [tableOrAlias, column] = targetRef.includes(".")
+    ? targetRef.split(".").map((part) => normalizeIdentifier(part))
+    : ["", normalizeIdentifier(targetRef)];
+
+  if (!column) {
+    return undefined;
+  }
+
+  const resolvedTable = tableOrAlias
+    ? tableRefs.find((ref) => ref.alias === tableOrAlias || ref.tableName === tableOrAlias)?.tableName
+    : tableRefs[0]?.tableName;
+
+  if (!resolvedTable) {
+    return undefined;
+  }
+
+  return `CREATE INDEX idx_${resolvedTable}_${column} ON ${resolvedTable} (${column});`;
+}
+
+function buildCorrelatedSubqueryRewriteSnippet(parsed: ParsedSqlQuery): string {
+  const baseTable = parsed.tableRefs[0]?.tableName ?? "<base_table>";
+  const joinedTable = parsed.tableRefs.find((tableRef) => tableRef.joinType === "join")?.tableName ?? "<detail_table>";
+
+  return `WITH ranked AS (\n  SELECT\n    ${joinedTable}.*,\n    ROW_NUMBER() OVER (PARTITION BY <group_key> ORDER BY <sort_column> DESC) AS rn\n  FROM ${joinedTable}\n)\nSELECT b.*, r.*\nFROM ${baseTable} b\nLEFT JOIN ranked r ON r.<group_key> = b.<group_key> AND r.rn = 1;`;
+}
+
+function buildDistinctAggregationRewriteSnippet(parsed: ParsedSqlQuery): string {
+  const distinctExpr = parsed.countDistinctExpressions[0] ?? "<entity_id>";
+
+  return `WITH deduped AS (\n  SELECT DISTINCT ${distinctExpr}, <grouping_key>\n  FROM <source_table>\n  WHERE <filters>\n)\nSELECT <grouping_key>, COUNT(*)\nFROM deduped\nGROUP BY <grouping_key>;`;
+}
+
+function buildTrigramIndexSuggestion(tableRefs: ParsedTableRef[]): string | undefined {
+  const tableName = tableRefs[0]?.tableName;
+  if (!tableName) {
+    return undefined;
+  }
+
+  return `CREATE EXTENSION IF NOT EXISTS pg_trgm;\nCREATE INDEX idx_${tableName}_search_trgm ON ${tableName} USING gin (<search_column> gin_trgm_ops);`;
 }
 
 function extractCountDistinctExpressions(sql: string): string[] {
