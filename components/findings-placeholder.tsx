@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { AiCommentary, Severity, ToneMode } from "@/lib/models/domain";
+import { derivePerformanceMetrics } from "@/lib/analysis";
 import type { SqlAnalysisResult } from "@/lib/analysis";
 
 const severityStyles: Record<Severity, { badge: string; rail: string; label: string }> = {
@@ -78,6 +79,8 @@ export function FindingsPlaceholder({
           aiCommentary={aiCommentary}
           mode={mode}
         />
+
+        <PerformanceVisualizationPanel isAnalyzing={isAnalyzing} hasQuery={hasQuery} analysis={analysis} />
 
         {isAnalyzing ? (
           <LoadingState />
@@ -211,6 +214,131 @@ function CommentaryList({ title, items, emptyLabel = "None" }: { title: string; 
         <p className="mt-1 text-slate-400">{emptyLabel}</p>
       )}
     </div>
+  );
+}
+
+function PerformanceVisualizationPanel({
+  isAnalyzing,
+  hasQuery,
+  analysis,
+}: {
+  isAnalyzing: boolean;
+  hasQuery: boolean;
+  analysis: SqlAnalysisResult | null;
+}) {
+  if (isAnalyzing) {
+    return (
+      <section className="rounded-xl border border-slate-700/60 bg-slate-900/45 p-4" aria-live="polite" aria-busy>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">Performance map</h3>
+          <span className="rounded-md border border-slate-600/80 bg-slate-950/60 px-2 py-1 text-[10px] font-semibold text-slate-400">
+            Profiling…
+          </span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="h-28 animate-pulse rounded-lg border border-slate-700/60 bg-slate-800/55" />
+          <div className="h-28 animate-pulse rounded-lg border border-slate-700/60 bg-slate-800/55" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!hasQuery || !analysis) {
+    return (
+      <section className="rounded-xl border border-dashed border-slate-600/90 bg-slate-900/35 p-4 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-300">Performance map</p>
+        <p className="mt-2 text-sm text-slate-400">Run an analysis to see join relationships, scan risk, and complexity indicators.</p>
+      </section>
+    );
+  }
+
+  const metrics = derivePerformanceMetrics(analysis);
+  const severitySegments = [
+    { key: "critical", color: "bg-rose-400", value: metrics.severityDistribution.critical },
+    { key: "high", color: "bg-rose-500/90", value: metrics.severityDistribution.high },
+    { key: "medium", color: "bg-amber-400/90", value: metrics.severityDistribution.medium },
+    { key: "low", color: "bg-emerald-400/90", value: metrics.severityDistribution.low },
+  ] as const;
+  const totalFindings = analysis.findings.length;
+
+  return (
+    <section className="rounded-xl border border-slate-700/60 bg-gradient-to-br from-slate-900/65 to-slate-950/60 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-200">Performance map</h3>
+        <span className="rounded-md border border-slate-600/80 bg-slate-950/70 px-2 py-1 text-[10px] font-semibold text-slate-300">
+          Deterministic heuristics
+        </span>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-slate-700/70 bg-slate-900/55 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Join relationships</p>
+          <p className="mt-2 flex items-center gap-2 text-xl font-semibold text-slate-100">
+            <span aria-hidden>🧩</span>
+            {metrics.joinCount}
+            <span className="text-sm font-medium text-slate-400">joins across {metrics.tableCount || 1} table(s)</span>
+          </p>
+          <div className="mt-3 flex items-center gap-1.5">
+            {Array.from({ length: Math.max(1, Math.min(6, metrics.tableCount || 1)) }).map((_, index) => (
+              <div key={`node-${index}`} className="flex items-center gap-1">
+                <span className="h-2.5 w-2.5 rounded-full bg-teal-400/80" />
+                {index < Math.max(0, Math.min(6, metrics.tableCount || 1) - 1) ? (
+                  <span className="h-px w-4 bg-slate-500/80" />
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-slate-700/70 bg-slate-900/55 p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Query complexity</p>
+          <p className="mt-2 flex items-center gap-2 text-xl font-semibold text-slate-100">
+            <span aria-hidden>⚙️</span>
+            {metrics.complexityScore}
+            <span className="text-sm font-medium text-slate-400">{metrics.complexityLabel}</span>
+          </p>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-700/70">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-teal-500 via-amber-400 to-rose-500"
+              style={{ width: `${metrics.complexityScore}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-slate-700/70 bg-slate-900/55 p-3">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">Scan risk distribution</p>
+          <p className="text-xs font-semibold text-slate-300">
+            🔎 {metrics.scanRiskLevel.toUpperCase()} RISK • score {metrics.scanRiskScore}
+          </p>
+        </div>
+
+        {totalFindings > 0 ? (
+          <>
+            <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-700/80">
+              {severitySegments.map((segment) => {
+                const width = (segment.value / totalFindings) * 100;
+                if (width <= 0) {
+                  return null;
+                }
+
+                return <div key={segment.key} className={segment.color} style={{ width: `${width}%` }} aria-hidden />;
+              })}
+            </div>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-slate-300 sm:grid-cols-4">
+              {severitySegments.map((segment) => (
+                <p key={`legend-${segment.key}`}>
+                  <span className="font-semibold capitalize text-slate-200">{segment.key}:</span> {segment.value}
+                </p>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-slate-400">No findings detected, scan risk is currently minimal.</p>
+        )}
+      </div>
+    </section>
   );
 }
 
