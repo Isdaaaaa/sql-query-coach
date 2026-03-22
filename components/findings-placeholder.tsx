@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 
+import type { AiCommentary, Severity, ToneMode } from "@/lib/models/domain";
 import type { SqlAnalysisResult } from "@/lib/analysis";
-import type { Severity, ToneMode } from "@/lib/models/domain";
 
 const severityStyles: Record<Severity, { badge: string; rail: string; label: string }> = {
   low: {
@@ -34,6 +34,8 @@ interface FindingsPlaceholderProps {
   analysis: SqlAnalysisResult | null;
   hasQuery: boolean;
   usingCustomInput: boolean;
+  aiCommentaryEnabled: boolean;
+  aiCommentary: AiCommentary | null;
 }
 
 export function FindingsPlaceholder({
@@ -42,6 +44,8 @@ export function FindingsPlaceholder({
   analysis,
   hasQuery,
   usingCustomInput,
+  aiCommentaryEnabled,
+  aiCommentary,
 }: FindingsPlaceholderProps) {
   const findings = analysis?.findings ?? [];
 
@@ -58,9 +62,7 @@ export function FindingsPlaceholder({
             </p>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-medium text-slate-300">
-            <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1">
-              Engine: Heuristics
-            </span>
+            <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1">Engine: Heuristics</span>
             <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1">
               Source: {usingCustomInput ? "Custom" : "Sample"}
             </span>
@@ -69,6 +71,14 @@ export function FindingsPlaceholder({
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4 md:p-5">
+        <AiCommentaryPanel
+          isAnalyzing={isAnalyzing}
+          hasQuery={hasQuery}
+          aiCommentaryEnabled={aiCommentaryEnabled}
+          aiCommentary={aiCommentary}
+          mode={mode}
+        />
+
         {isAnalyzing ? (
           <LoadingState />
         ) : !hasQuery ? (
@@ -115,11 +125,7 @@ export function FindingsPlaceholder({
 
                   <div className="mt-3 space-y-3">
                     {finding.suggestion.rewrittenSql ? (
-                      <CodeSuggestionBlock
-                        label="Rewrite snippet"
-                        code={finding.suggestion.rewrittenSql}
-                        copyLabel="Copy SQL"
-                      />
+                      <CodeSuggestionBlock label="Rewrite snippet" code={finding.suggestion.rewrittenSql} copyLabel="Copy SQL" />
                     ) : null}
 
                     {finding.suggestion.indexStatement ? (
@@ -139,6 +145,72 @@ export function FindingsPlaceholder({
         {analysis ? <DiagnosticsSection analysis={analysis} /> : null}
       </div>
     </article>
+  );
+}
+
+function AiCommentaryPanel({
+  isAnalyzing,
+  hasQuery,
+  aiCommentaryEnabled,
+  aiCommentary,
+  mode,
+}: {
+  isAnalyzing: boolean;
+  hasQuery: boolean;
+  aiCommentaryEnabled: boolean;
+  aiCommentary: AiCommentary | null;
+  mode: ToneMode;
+}) {
+  return (
+    <section className="rounded-xl border border-teal-500/25 bg-gradient-to-br from-teal-500/10 to-slate-900/35 p-4">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-teal-200">AI Commentary</h3>
+        <span className="rounded-md border border-slate-600/80 bg-slate-950/60 px-2 py-1 text-[10px] font-semibold text-slate-300">
+          {mode === "coaching" ? "Coach Tone" : "Reviewer Tone"}
+        </span>
+      </div>
+
+      {!aiCommentaryEnabled ? (
+        <p className="text-sm text-slate-300">Commentary is off. Enable AI commentary in the header for a structured summary.</p>
+      ) : isAnalyzing ? (
+        <div className="space-y-2" aria-live="polite" aria-busy>
+          <div className="h-3 w-2/3 animate-pulse rounded bg-slate-700/70" />
+          <div className="h-3 w-full animate-pulse rounded bg-slate-800/80" />
+          <div className="h-3 w-5/6 animate-pulse rounded bg-slate-800/80" />
+        </div>
+      ) : !hasQuery ? (
+        <p className="text-sm text-slate-300">Add a SQL query to generate commentary with priorities and risk callouts.</p>
+      ) : !aiCommentary ? (
+        <p className="text-sm text-slate-300">No commentary generated yet.</p>
+      ) : (
+        <div className="space-y-3 text-sm text-slate-200">
+          <p className="leading-relaxed text-slate-100">{aiCommentary.overallAssessment}</p>
+
+          <CommentaryList title="Top priorities" items={aiCommentary.topPriorities} />
+          <CommentaryList title="Quick wins" items={aiCommentary.quickWins} emptyLabel="No quick wins identified yet." />
+          <CommentaryList title="Risk callouts" items={aiCommentary.riskCallouts} emptyLabel="No high-risk findings detected." />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CommentaryList({ title, items, emptyLabel = "None" }: { title: string; items: string[]; emptyLabel?: string }) {
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">{title}</p>
+      {items.length ? (
+        <ul className="mt-1 space-y-1 text-slate-200">
+          {items.map((item, index) => (
+            <li key={`${title}-${index}`} className="leading-relaxed text-slate-300">
+              {item}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-slate-400">{emptyLabel}</p>
+      )}
+    </div>
   );
 }
 
