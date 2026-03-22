@@ -4,4 +4,5 @@ out
 *.log
 .env*
 coverage
+*.tsbuildinfo
 .DS_Store

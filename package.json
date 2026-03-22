@@ -9,7 +9,10 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "node --test",
-    "samples:check": "node scripts/print-sample-summary.mjs"
+    "samples:check": "node scripts/print-sample-summary.mjs",
+    "demo:script": "node scripts/print-demo-script.mjs",
+    "package:check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "clean": "rm -rf .next out coverage *.tsbuildinfo"
   },
   "dependencies": {
     "next": "14.2.13",
