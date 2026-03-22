@@ -1,5 +1,12 @@
 export type ToneMode = "coaching" | "reviewer";
 
+export interface AiCommentary {
+  overallAssessment: string;
+  topPriorities: string[];
+  quickWins: string[];
+  riskCallouts: string[];
+}
+
 export type Severity = "low" | "medium" | "high" | "critical";
 
 export type SqlDialect = "postgres";

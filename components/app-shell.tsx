@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { analyzeSqlCoaching, type SqlAnalysisResult } from "@/lib/analysis";
+import { analyzeSqlCoaching, generateAiCommentary, type SqlAnalysisResult } from "@/lib/analysis";
 import { FindingsPlaceholder } from "@/components/findings-placeholder";
 import { QuerySchemaInputs } from "@/components/query-schema-inputs";
 import { SampleScenarioPicker } from "@/components/sample-scenario-picker";
@@ -20,6 +20,7 @@ function isDirtyComparedToSample(scenario: SampleScenario, querySql: string, sch
 export function AppShell({ scenarios }: AppShellProps) {
   const [selectedScenarioId, setSelectedScenarioId] = useState(scenarios[0]?.id ?? "");
   const [mode, setMode] = useState<ToneMode>("coaching");
+  const [aiCommentaryEnabled, setAiCommentaryEnabled] = useState(false);
 
   const selectedScenario = useMemo(
     () => scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarios[0],
@@ -53,6 +54,15 @@ export function AppShell({ scenarios }: AppShellProps) {
     return () => window.clearTimeout(timer);
   }, [querySql, schemaDdl, selectedScenario?.query.dialect]);
 
+  const isDirty = selectedScenario
+    ? isDirtyComparedToSample(selectedScenario, querySql, schemaDdl)
+    : false;
+  const aiCommentary = generateAiCommentary({
+    analysis,
+    mode,
+    enabled: aiCommentaryEnabled,
+  });
+
   if (!selectedScenario) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-7xl p-6 md:p-8">
@@ -63,8 +73,6 @@ export function AppShell({ scenarios }: AppShellProps) {
       </main>
     );
   }
-
-  const isDirty = isDirtyComparedToSample(selectedScenario, querySql, schemaDdl);
 
   const handleSelectScenario = (scenarioId: string) => {
     const nextScenario = scenarios.find((scenario) => scenario.id === scenarioId);
@@ -119,9 +127,18 @@ export function AppShell({ scenarios }: AppShellProps) {
               </button>
             </div>
 
-            <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1 text-xs font-medium text-slate-200">
-              AI: Off
-            </span>
+            <button
+              type="button"
+              onClick={() => setAiCommentaryEnabled((current) => !current)}
+              aria-pressed={aiCommentaryEnabled}
+              className={`rounded-md border px-2 py-1 text-xs font-medium transition ${
+                aiCommentaryEnabled
+                  ? "border-teal-400/60 bg-teal-500/15 text-teal-100"
+                  : "border-slate-600/90 bg-slate-950/60 text-slate-200 hover:border-slate-500"
+              }`}
+            >
+              AI commentary: {aiCommentaryEnabled ? "On" : "Off"}
+            </button>
             <span className="rounded-md border border-slate-600/90 bg-slate-950/60 px-2 py-1 text-xs font-medium text-slate-200">
               Data: {isDirty ? "Custom" : "Sample"}
             </span>
@@ -155,6 +172,8 @@ export function AppShell({ scenarios }: AppShellProps) {
           analysis={analysis}
           hasQuery={Boolean(querySql.trim())}
           usingCustomInput={isDirty}
+          aiCommentaryEnabled={aiCommentaryEnabled}
+          aiCommentary={aiCommentary}
         />
       </section>
     </main>
