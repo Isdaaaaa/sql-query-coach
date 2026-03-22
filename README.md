@@ -1,117 +1,41 @@
 # SQL Query Coach
 
-SQL Query Coach is a Next.js portfolio project that reviews SQL snippets and returns deterministic, practical performance guidance.
+SQL Query Coach is a lightweight web app that analyzes SQL queries and a simplified schema to surface likely performance issues, suggest index or rewrite options, and provide two explanation modes: a concise Reviewer view and a friendly Coaching view for learners.
 
-The app is designed to feel like a calm database reviewer: concise by default, actionable in every finding, and explicit about what is deterministic versus AI-assisted commentary.
+Core features
 
-## Current Capabilities
+- Paste-in query + simplified schema input
+- Heuristic detectors for common issues: missing indexes, SELECT *, cartesian joins risk, functions on indexed columns, unbounded scans, skewed GROUP BY/ORDER BY
+- Structured findings with severity, suggested rewrites, and index candidates
+- Two explanation tones: Coaching (friendly) and Reviewer (concise)
+- Sample Postgres-like schemas and canned queries for demos
 
-- **Heuristic SQL analysis** for common anti-patterns (for example `SELECT *`, function-wrapped predicates, correlated subqueries, and leading wildcard `LIKE` usage)
-- **Schema-aware hints** from lightweight DDL parsing to validate table and index context
-- **Dual communication modes**:
-  - **Coaching**: guidance-oriented recommendations
-  - **Reviewer**: concise risk-oriented phrasing
-- **Optional AI commentary layer** with clear on/off status and deterministic fallback
-- **Built-in sample scenarios** for commerce, fintech, and analytics-style workloads
-- **Performance summary metrics** (join/table counts, severity distribution, complexity and scan-risk signals)
+Why it matters
 
-## Tech Stack
+Many developers need quick, actionable guidance on query performance without setting up heavy APM or database replicas. This project demonstrates how deterministic heuristics and clear UX can help engineers and learners diagnose queries safely and consistently.
 
-- **Framework:** Next.js 14 (App Router)
-- **Language:** TypeScript (strict)
-- **UI:** React + Tailwind CSS
-- **Tests:** Node test runner (`node --test`) with TypeScript transpile-on-test harness
+Setup
 
-## Getting Started
+1. Install dependencies (Node.js + pnpm/npm)
 
-### 1) Install dependencies
+   pnpm install
 
-```bash
-npm install
-```
+2. Start the dev server
 
-### 2) Run locally
+   pnpm dev
 
-```bash
-npm run dev
-```
+3. Open the demo page and use the sample schemas/queries to try the Coach mode.
 
-Open `http://localhost:3000`.
+Showcase notes
 
-### 3) Run quality checks
+- The demo uses static sample schemas and deterministic heuristics to keep results consistent for portfolio review.
+- AI commentary is optional and labeled; deterministic fallbacks are provided so demos remain reproducible.
 
-```bash
-npm run lint
-npm run typecheck
-npm test
-npm run build
-```
+Limitations
 
-Or run the full gate in one command:
+- No live database connectivity or EXPLAIN integration in the MVP.
+- Recommendations are heuristic and intended as guidance; they should be validated in a real environment before production changes.
 
-```bash
-npm run package:check
-```
+License
 
-## Scripts
-
-- `npm run dev` — start local development server
-- `npm run lint` — run ESLint via Next.js config
-- `npm run typecheck` — run strict TypeScript checks (`tsc --noEmit`)
-- `npm test` — run Node test suite
-- `npm run build` — create production build
-- `npm run start` — serve production build
-- `npm run samples:check` — print sample data sanity summary
-- `npm run demo:script` — print a step-by-step demo walkthrough script
-- `npm run package:check` — run lint + typecheck + tests + production build
-- `npm run clean` — remove local build and cache artifacts
-
-## Architecture Overview
-
-High-level flow:
-
-1. **Input workspace (left column)** captures SQL + schema DDL (or loads sample scenarios).
-2. **Analysis pipeline (`lib/analysis`)** parses SQL/schema, applies deterministic heuristic rules, and scores findings.
-3. **Presentation layer (right column)** renders findings, suggestions, and optional AI commentary.
-4. **Mode controls** adjust output tone (Coaching vs Reviewer) without changing deterministic rule results.
-
-Key files:
-
-- `app/page.tsx` — app entry and sample scenario wiring
-- `components/app-shell.tsx` — page orchestration, mode toggles, and analysis lifecycle
-- `lib/analysis/sql-coach.ts` — core parsing + heuristic findings engine
-- `lib/analysis/perf-metrics.ts` — complexity and scan-risk scoring
-- `lib/analysis/commentary.ts` — optional AI commentary generator
-- `lib/data/sample-scenarios.ts` — curated demo-ready SQL/schema inputs
-- `tests/*.test.js` — deterministic analysis and commentary behavior tests
-
-## Demo Assets
-
-Demo documentation and placeholder asset workflow live in [`docs/demo/README.md`](./docs/demo/README.md).
-
-Use:
-
-```bash
-npm run demo:script
-```
-
-to print a narrator-friendly walkthrough before recording a GIF/video.
-
-## Limitations (Current Slice)
-
-- Parsing is intentionally heuristic and regex-driven; this is not a full SQL parser.
-- Dialect behavior is tuned primarily for PostgreSQL-style examples.
-- AI commentary is deterministic mock logic today (no live provider integration).
-- Findings are optimized for educational coaching, not guaranteed execution-plan correctness.
-- No persistence/auth layer yet; the app is currently local-first with sample-driven workflows.
-
-## Roadmap Alignment
-
-This packaging/docs slice supports **Phase 6 — Polish & Release** in [`ROADMAP.md`](./ROADMAP.md).
-
-Upcoming roadmap priorities still include:
-
-- richer visual diagnostics and demo polish (Phase 5)
-- deeper safety wording and release hardening (Phase 6)
-
-See [`ROADMAP.md`](./ROADMAP.md) for full phase detail.
+MIT
